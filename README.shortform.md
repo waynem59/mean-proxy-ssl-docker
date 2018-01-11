@@ -139,22 +139,7 @@ router.get('/', (req, res) => {
 
 module.exports = router;
 ```
-Zuletzt muss die Datei `package.json` ergänzt werden: 
-
-```js
-{
-  "name": "express-server",
-  "version": "0.0.0",
-  "private": true,
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "body-parser": "~1.18.2",
-    "express": "~4.15.5"
-  }
-}
-```
+Zuletzt muss die Datei [`package.json`](https://github.com/waynem59/mean-proxy-ssl-docker/blob/d9b0bede3f2ab8b91a9a026dbe0a10d3c9070220/server/package.json) ergänzt werden
 
 Testen des Node-Express-Servers:
 ```sh
@@ -271,33 +256,13 @@ Einführung einer Verlinkung zwischen Server und Datenbank:
 
 ### Verknüpfung von Server mit Angular 4
 
-Zunächst wird für die Herstellung der Infrastruktur auf Bootstrap 4 zurückgegriffen. Um der besseren Fokussierung willen erfolgt dies nicht über die Einbindung im Projekt, sondern über Zugriff auf ein CDN in der Datei `ng4-client/src/index.html`:
-
-```html
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Ng4 Client</title>
-  <base href="/">
-
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <!-- Bootstrap CDN -->
-  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css">
-
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
-</head>
-<body>
-  <app-root>Loading...</app-root>
-</body>
-</html>
-``` 
-
-Die weitere Verknüpfung von Client und Server erfolgt **nicht** nach den Design-Regeln von Angular 4, sondern 'quick and dirty' in der zentralen `app-root`-Komponente (`ng4-client/src/app/app.component.ts`)[./ng4-client/src/app/app.component.ts].
+Zunächst wird für die Herstellung der Infrastruktur auf Bootstrap 4 zurückgegriffen. Um der besseren Fokussierung willen erfolgt dies nicht über die Einbindung im Projekt, sondern über Zugriff auf ein CDN in der Datei [`ng4-client/src/index.html`](./ng4-client/src/index.html)-
 
 
-Das Template hierzu wird in (`ng4-client/src/app/app.component.html`)[./ng4-client/src/app/app.component.html] angelegt. Schließlich müssen die Ressourcen noch über die Eintragungen in (`ng4-client/src/app/app.module.ts`)[./ng4-client/src/app/app.module.ts] bekanntgemacht werden. 
+Die weitere Verknüpfung von Client und Server erfolgt **nicht** nach den Design-Regeln von Angular 4, sondern 'quick and dirty' in der zentralen `app-root`-Komponente [`ng4-client/src/app/app.component.ts`](./ng4-client/src/app/app.component.ts).
+
+
+Das Template hierzu wird in (`ng4-client/src/app/app.component.html`)[./ng4-client/src/app/app.component.html] angelegt. Schließlich müssen die Ressourcen noch über die Eintragungen in [`ng4-client/src/app/app.module.ts`](./ng4-client/src/app/app.module.ts) bekanntgemacht werden. 
 
 
 ## Hinzufügen des Proxy-Servers
@@ -318,67 +283,13 @@ RUN rm /etc/nginx/conf.d/default.conf
 COPY ./default.conf /etc/nginx/conf.d/default.conf
 ```
 
-proxy/default.conf
+[proxy/default.conf](https://github.com/waynem59/mean-proxy-ssl-docker/blob/9b350134818a4ed5a6d913c3f00e1f5410311b16/proxy/default.conf)
 
-```sh
-# web service1 config.
-server {
-  listen 80 default_server;
-  listen [::]:80 default_server;
-  server_name _;
-  # return 301 https://$host$request_uri;
 
-  client_max_body_size 100M;
+Änderungen am [`docker-compose.yml`](https://github.com/waynem59/mean-proxy-ssl-docker/blob/9b350134818a4ed5a6d913c3f00e1f5410311b16/docker-compose.yml)-File sind auch nötig, do dass zum Einen nicht bei jeder Änderung an einem Angular-File der komplette Container neu gebaut werden muss (dazu dient das Volume im "angular"-Container) und dass zum Anderen der Proxy-Container angelegt und mit dem Client verknüpft wird.  
 
-  index index.js index.htm index.html;
 
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  proxy_buffering off;
-  proxy_request_buffering off;
-  proxy_intercept_errors on;
-
-  # HTTP 1.1 support
-  proxy_http_version 1.1;
-  proxy_set_header Connection "";
-
-  location / {
-    proxy_pass "http://angular:4200";
-  }
-}
-```
-
-Änderungen am `docker-compose.yml`-File sind auch nötig, do dass zum Einen nicht bei jeder Änderung an einem Angular-File der komplette Container neu gebaut werden muss (dazu dient das Volume im "angular"-Container) und dass zum Anderen der Proxy-Container angelegt und mit dem Client verknüpft wird.  
-
-```sh
-version: '3'
-
-services:
-  angular: 
-    build: ng4-client
-    volumes: 
-      - ./ng4-client:/ng-app 
-  ...
-  proxy:
-  ...
-    links: 
-      - angular
-```
-
-Zu guter Letzt muss eine kleine Anpassung an der `ng4-client/package.json` vorgenommen werden, so dass während der Entwicklung nicht ausschlißelich über `localhost` auf die Anwendung zugegriffen werden kann. 
-
-```sh
-"scripts": {
-    "ng": "ng",
-    "start": "ng serve --host 0.0.0.0 --disable-host-check",
-    ...
-  },
-  ...
-```
-
-Wenn nun z.B. in `/etc/hosts` ein Eintrag für einen lokalen Server mit anderem Namen angelegt wird, dann kann die App auch unter dem Namen dieses Servers aufgerufen werden. Beispiel: 
+Zu guter Letzt muss eine kleine Anpassung an der [`ng4-client/package.json`](https://github.com/waynem59/mean-proxy-ssl-docker/blob/9b350134818a4ed5a6d913c3f00e1f5410311b16/ng4-client/package.json) vorgenommen werden, so dass während der Entwicklung nicht ausschlißelich über `localhost` auf die Anwendung zugegriffen werden kann. Wenn nun z.B. in `/etc/hosts` ein Eintrag für einen lokalen Server mit anderem Namen angelegt wird, dann kann die App auch unter dem Namen dieses Servers aufgerufen werden. Beispiel: 
 
 `/etx/hosts`
 
@@ -424,7 +335,7 @@ Wenn das `temp`-Verzeichnis nicht gelöscht wird, so muss es zumindest in `.giti
 ### Übertragung der Zertifikate
 Dazu sind zunächst folgende Schritte abzuarbeiten:
 * Anlegen eines Verzeichnisses `proxy/certs` und Kopieren der soeben angelegten Zertifikate in dieses Verzeichnis. 
-* Änderungen an der (`default.conf`)[./proxy/default.conf]
+* Änderungen an der [`default.conf`](./proxy/default.conf).
 
 
 ## Deployment
