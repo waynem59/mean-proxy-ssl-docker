@@ -10,7 +10,7 @@ import 'rxjs/add/operator/map';
   styleUrls: ['./app.component.css']
 })
 export class AppComponent implements OnInit {
-  title = 'app works!';
+  title = 'Hello World!';
 
   // Link to our api, pointing to localhost
   API = 'http://localhost:3000';

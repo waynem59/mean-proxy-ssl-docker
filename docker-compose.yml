@@ -2,9 +2,11 @@ version: '3'
 
 services:
   angular: 
-    build: ng4-client 
+    build: ng4-client
+    volumes: 
+      - ./ng4-client:/ng-app 
     ports:
-      - "4210:4210"
+      - "4200:4200"
 
   server: 
     build: server 
@@ -17,3 +19,11 @@ services:
     image: mongo 
     ports:
       - "27017:27017" 
+
+  proxy:
+    build: proxy
+    restart: always
+    ports:
+      - 80:80
+    links: 
+      - angular

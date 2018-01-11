@@ -10,6 +10,6 @@ WORKDIR /ng-app
 COPY . .
 ## Build the angular app in production mode and store the artifacts in dist folder
 ## RUN $(npm bin)/ng build --prod --build-optimizer
-EXPOSE 4210
+EXPOSE 4200
 # Serve the app
 CMD ["npm", "start"]
