@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  angular: 
+    build: ng4-client 
+    ports:
+      - "4210:4210"
+
+  server: 
+    build: server 
+    ports:
+      - "3000:3000" 
+    links: 
+      - database  
+
+  database: 
+    image: mongo 
+    ports:
+      - "27017:27017" 
