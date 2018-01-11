@@ -1,3 +1,4 @@
+
 # Dokumentation und Walk-Through für einen SSL-geschützten MEAN-Stack hinter einem NGINX-Reverse-Proxy
 
 ## Die Angular-4ff-App
@@ -616,3 +617,136 @@ services:
     links: 
       - angular
 ```
+
+Zu guter Letzt muss eine kleine Anpassung an der `ng4-client/package.json` vorgenommen werden, so dass während der Entwicklung nicht ausschlißelich über `localhost` auf die Anwendung zugegriffen werden kann. 
+
+```sh
+"scripts": {
+    "ng": "ng",
+    "start": "ng serve --host 0.0.0.0 --disable-host-check",
+    ...
+  },
+  ...
+```
+
+Wenn nun z.B. in `/etc/hosts` ein Eintrag für einen lokalen Server mit anderem Namen angelegt wird, dann kann die App auch unter dem Namen dieses Servers aufgerufen werden. Beispiel: 
+
+`/etx/hosts`
+
+```sh
+...
+127.0.0.1       localhost
+127.0.0.1       www.my-local-server.com
+255.255.255.255 broadcasthost
+...
+```
+
+Nun meldet sich die App auch unter `http://www.my-local-server.com`.
+
+## Sicherung des Proxy-Servers
+
+Im Produktionsmodus wird der Server letztlich mit einem Letsencrypt-Zertifikat gesichert werden. Für die Entwicklungsphase läuft aber ein solches Zertifikat nicht auf einem lokalen Server. Daher muss hier auf selbst-signierte Zertifikate zurückgegriffen werden. 
+
+### Anlegen selbst-signierter Zertifikate
+
+Das Anlegen eines solchen Zertifikates ist in einem Rutsch möglich (siehe [hier](https://wiki.manitu.de/index.php/Server:Selbst-signiertes_SSL-Zertifikat_erstellen/erzeugen)). Zunächst wird ein `temp`-Verzeichnis angelegt, in dem die Zertifikate erzeugt werden: 
+```sh
+cd ..
+mkdir temp
+cd temp
+openssl req -new -days 999 -newkey rsa:4096 -sha512 -x509 -nodes -out server.crt -keyout server.key
+```
+
+Im Einzelnen sind folgende Schritte darin enthalten: 
+
+```sh
+## Erzeugen des private key und des certificate signing requests
+openssl req -new -keyout server.pem > server.csr
+
+## Private key in RSA (oder anderes Format) umwandeln
+openssl rsa -in server.pem -out server.key
+
+## Selbst-signiertes Zertifikat erzeugen
+openssl x509 -in server.csr -out server.crt -req -signkey server.key -days 999
+```
+
+Wenn das `temp`-Verzeichnis nicht gelöscht wird, so muss es zumindest in `.gitignore`und `.dockerignore` eingetragen werden.
+
+### Übertragung der Zertifikate
+Dazu sind zunächst folgende Schritte abzuarbeiten:
+* Anlegen eines Verzeichnisses `proxy/certs` und Kopieren der soeben angelegten Zertifikate in dieses Verzeichnis. 
+* Änderungen an der `default.conf`:
+```sh
+# web service1 config.
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  server_name www.my-local-server.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name www.my-local-server.com;
+  
+  # Path for SSL certificate
+  ssl_certificate /root/certs/server.crt;
+    ssl_certificate_key /root/certs/server.key;
+
+  ssl_session_timeout 1d;
+  ssl_session_cache shared:SSL:50m;
+  ssl_session_tickets off;
+
+  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+  ssl_ciphers 'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHAECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA:ECDHE-ECDSA-DES-CBC3-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA:!DSS';
+  ssl_prefer_server_ciphers on;
+
+    client_max_body_size 4G;
+
+    index index.js index.htm index.html;
+
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_buffering off;
+  proxy_request_buffering off;
+  proxy_http_version 1.1;
+  proxy_intercept_errors on;
+
+  ##location ~ /.well-known {
+  ##  allow all;
+  ##  root /var/www/;
+  ##}
+
+  location / {
+    proxy_pass "http://angular:4200";
+  }
+
+  access_log off;
+  error_log  /var/log/nginx/error.log error;
+}
+```
+* In der `docker-compose.yml`-Datei muss der Port 443 am Proxy-Container geöffnet werden:  
+```sh
+proxy:
+    build: proxy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    links: 
+      - angular
+
+```
+
+
+## Deployment
+
+### Betrieb des Projekts auf einer `docker-machine`
+
+### Produktionsmodus für Angular 4
+
+### Umstellen auf Letsencrypt-Zertifikate
+
+
