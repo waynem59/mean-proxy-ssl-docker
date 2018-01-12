@@ -1,4 +1,5 @@
 
+
 # Dokumentation und Walk-Through für einen SSL-geschützten MEAN-Stack hinter einem NGINX-Reverse-Proxy
 
 ## Die Angular-4ff-App
@@ -739,13 +740,128 @@ proxy:
       - angular
 
 ```
-
-
 ## Deployment
+Für das Deployment muss gegenüber dem bisherigen Vorgehen umgedacht werden. Um Angular 4 für den Produktionsbetrieb aufzustellen, wird mittels `ng build`anstelle des während des Entwicklungsprozesses erforderlichen `ng serve` eine Distribution der erstellten Applikation erzeugt. Diese muss nun bereitgestellt werden. Der erzeugte komprimierte Code wird in einem Set von Javascript-Dateien im Verzeichnis `/dist` abgelegt und kann von dort als quasi-statischer Code einem beliebigen HTML-Server zur Veröffentlichung übergeben werden. In unserem Falle geschieht dies mit Docker.
+Es wäre möglich, den Build-Prozess in den Workflow der "Dockerisierung" miteinzubeziehen. Hier allerdings soll davon ausgegangen werden, dass dieser Vorgang auf dem Entwicklungsrechner erfolgt, dass mithin der Code bereits vorliegt. 
+ 
+### Erneuerung des `ng4-client/Dockerfile`
+Das genannte `Dockerfile` muss komplett erneuert werden. Angular 4 braucht für den Produktionsbetrieb einen Server an seiner Seite. Wie die unterschiedlichen Bereitstellungsbefehle schon andeuten, ist mit `ng build`kein Server verbunden, der den Code ausführt. Vielmehr wird der erzeugte quasi-statische Code auf einem eigenen Server zur Ausführung gebracht. Dieser wird mittels einer Nginx erzeugt. Das neue `Dockerfile` sieht also so aus: 
+```sh
+FROM nginx:alpine
+COPY nginx/default.conf /etc/nginx/conf.d/
+RUN rm -rf /usr/share/nginx/html/*
+COPY ./dist /usr/share/nginx/html
+ENTRYPOINT ["nginx", "-g", "daemon off;"]
+```
+Die Zertifikate werden also hier schon gar nicht mehr benötigt, da die SSL-Sicherung der Routes auf anderem Weg erfolgt.
+
+### Anlegen eines Proxy-Servers 
+Für die Sicherung wird ein Proxy-Server zwischen die diversen bereits bekannten Container und das WWW gestellt.
+```sh
+cd ..
+mkdir proxy
+cd proxy
+# Kopieren der Zertifikate
+mv -rf ../ng4-client/certs ./
+touch default.conf
+touch Dockerfile
+```
+Befüllen von `default.conf`
+```sh
+# web service1 config.
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  server_name www.my-local-server.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name www.my-local-server.com;
+  
+  # Path for SSL certificate
+  ssl_certificate /root/certs/server.crt;
+    ssl_certificate_key /root/certs/server.key;
+
+  ssl_session_timeout 1d;
+  ssl_session_cache shared:SSL:50m;
+  ssl_session_tickets off;
+
+  ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+  ssl_ciphers 'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHAECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA:ECDHE-ECDSA-DES-CBC3-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA:!DSS';
+  ssl_prefer_server_ciphers on;
+
+    client_max_body_size 4G;
+
+    index index.js index.htm index.html;
+
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_buffering off;
+  proxy_request_buffering off;
+  proxy_http_version 1.1;
+  proxy_intercept_errors on;
+
+  location / {
+    proxy_pass "http://angular:4200";
+  }
+
+  location /api/ {
+        proxy_pass http://server:3000/;
+    }  
+
+  access_log off;
+  error_log  /var/log/nginx/error.log error;
+}
+```
+Es wird sichtbar, dass der Zugriff auf den Node-Server fortan über den Proxy-Server mittels der Route `/api` erfolgt und damit der direkte Zugriff versperrt bleibt. Angular, dass im Produktionsmode eigentlich auf Port 80 bereitgestellt wird, wird mittels der vorgeschalteten Nginx auf Port 4200 umgeleitet. Dieser Port wird später in der `docker-compose.yml` wieder aufgegriffen. 
+ 
+Zuvor wird das `Dockerfile` des Proxy-Servers befüllt. Hier tauchen nun auch die Zertifikate wieder auf, auf die in `default.conf` ja bereits Bezug genommen wurde. 
+
+```sh
+FROM nginx:alpine
+
+#  default conf for proxy service
+RUN rm /etc/nginx/conf.d/default.conf
+COPY ./default.conf /etc/nginx/conf.d/default.conf
+COPY ./certs/ /root/certs/
+``` 
+### Änderung an der `docker-compose.yml`
+```sh
+version: '3'
+
+services:
+  angular: 
+    build: ng4-client
+    ports:
+      - "4200:4200"
+
+  server: 
+    build: server 
+    ports:
+      - "3000:3000" 
+    links: 
+      - database  
+
+  database: 
+    image: mongo 
+    ports:
+      - "27017:27017" 
+ 
+  proxy:
+    build: proxy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    links: 
+      - angular
+```
 
 ### Betrieb des Projekts auf einer `docker-machine`
-
-### Produktionsmodus für Angular 4
 
 ### Umstellen auf Letsencrypt-Zertifikate
 
